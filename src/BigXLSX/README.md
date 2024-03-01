@@ -11,7 +11,7 @@ Esta librería se utiliza para leer archivos de XLSX demasiado grandes para carg
 
 PHP 7.1+, PHP 8.0+
 
-Módulo [zlib](https://www.php.net/manual/es/book.zlib.php)
+Extensión [zip](https://www.php.net/manual/es/book.zip.php)
 
 La librería [BigXML](../BigXML/README.md)
 

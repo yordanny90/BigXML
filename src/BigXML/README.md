@@ -11,7 +11,7 @@ Esta librería se utiliza para leer archivos XML demasiado grandes para cargar t
 
 PHP 7.1+, PHP 8.0+
 
-Clase `XMLReader` de [libxml](https://www.php.net/manual/en/book.libxml.php)
+Extensión [libxml](https://www.php.net/manual/en/book.libxml.php)
 
 ## Ejemplo
 
