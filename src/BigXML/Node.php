@@ -106,6 +106,10 @@ class Node implements \ArrayAccess{
 		return simplexml_load_string($this->xml->readOuterXml());
 	}
 
+    public function toDOM(\DOMNode $dom=null){
+        return $this->xml->expand($dom);
+    }
+
 	public function offsetExists($offset){
 		return $this->attrExists($offset);
 	}
