@@ -2,8 +2,6 @@
 
 namespace BigXLSX;
 
-use SimpleXMLElement;
-
 class SheetIterator implements \Iterator{
 	protected static $columnsName=[];
 
@@ -29,14 +27,22 @@ class SheetIterator implements \Iterator{
 	protected $excludeHidden=true;
 	protected $hiddenCols=[];
 	protected $alias;
+	protected $rowBegin;
+	protected $rowEnd;
+	protected $colBegin;
+	protected $colEnd;
 
-	public function __construct(Sheet &$sheet){
+	public function __construct(Sheet &$sheet, ?array $alias, ?int $rowBegin=null, ?int $colBegin=null, ?int $rowEnd=null, ?int $colEnd=null){
 		$this->sheet=&$sheet;
 		$this->sharedStrings=$sheet->getReader()->getSharedStrings();
 		$this->stylesNum=$sheet->getReader()->getStylesNumeric();
 		$this->cellObject=$sheet->isCellObject();
 		$this->excludeHidden=$sheet->isExcludeHidden();
-		$this->alias=$sheet->getAlias();
+		$this->alias=$alias;
+		$this->rowBegin=$rowBegin;
+		$this->rowEnd=$rowEnd;
+		$this->colBegin=$colBegin;
+		$this->colEnd=$colEnd;
 	}
 
 	/**
@@ -56,8 +62,8 @@ class SheetIterator implements \Iterator{
 		if(!count($this->hiddenCols) && $cols=$file->getReader('worksheet/cols/col')){
 			$hiddenCols=[];
 			foreach($cols->getIterator() As $col){
-				if($col->attr('hidden') && strtolower($col->attr('hidden'))!=='false' && is_numeric($col->attr('min'))){
-					$adds=array_keys(array_fill(intval($col->attr('min'))-1,intval($col->attr('max')??$col->attr('min'))-intval($col->attr('min'))+1,null));
+				if($col['hidden'] && strtolower($col['hidden'])!=='false' && is_numeric($col['min'])){
+					$adds=array_keys(array_fill(intval($col['min'])-1,intval($col['max']??$col['min'])-intval($col['min'])+1,null));
 					$hiddenCols=array_merge($hiddenCols, $adds);
 				}
 			}
@@ -70,14 +76,17 @@ class SheetIterator implements \Iterator{
 	 * @return void
 	 */
 	private function parseData(){
-		if(!($row=$this->currentRow())) return;
-		$r=$row->attr('r');
+		if(!$this->isCurrentRow()) return;
+        $row=$this->sheetData->current();
+		$r=$row['r'];
 		$rowData=[];
 		$this->cache[$r-1]=&$rowData;
 		if($row->isEmptyElement) return;
 		foreach($row->toSimpleXMLElement()->c as $cell){
 			$col=static::colToIndex(str_replace($r, '', $cell['r']));
 			if(is_null($col)) continue;
+			if(!is_null($this->colBegin) && $col<$this->colBegin) continue;
+			if(!is_null($this->colEnd) && $col>$this->colEnd) continue;
 			if($this->excludeHidden && isset($this->hiddenCols[$col])) continue;
 			if($this->alias && is_null($col=($this->alias[$col]??null))) continue;
 			$rowData[$col]=$this->parseCellValue($cell);
@@ -85,10 +94,10 @@ class SheetIterator implements \Iterator{
 	}
 
 	/**
-	 * @param SimpleXMLElement $cell
+	 * @param \SimpleXMLElement $cell
 	 * @return CellValue|string
 	 */
-	protected function parseCellValue(SimpleXMLElement $cell){
+	protected function parseCellValue(\SimpleXMLElement $cell){
 		$value=null;
 		switch($type=strval($cell['t'])){
 			case "s": // shared string
@@ -111,6 +120,9 @@ class SheetIterator implements \Iterator{
 			case "n": // Number
 				if(isset($cell->v)) $value=strval($cell->v);
 				break;
+            case "d": // Date ISO8601
+                if(isset($cell->v)) $value=strval($cell->v);
+                break;
 			default:
 				if(isset($cell->v)){
 					$value=SharedStrings::normalizeString($cell->v);
@@ -119,6 +131,9 @@ class SheetIterator implements \Iterator{
 						$value=$this->stylesNum->parseDate($value);
 					}
 				}
+                if($type!=''){
+                    $type.='';
+                }
 				break;
 		}
 		$value=new CellValue($value,$type);
@@ -129,20 +144,15 @@ class SheetIterator implements \Iterator{
 	/**
 	 * @return \BigXML\Iterator|null
 	 */
-	private function currentRow(){
-		if($this->sheetData->valid() && intval($this->sheetData->current()->attr('r'))==($this->key+1)){
-			return $this->sheetData->current();
-		}
-		return null;
+	private function isCurrentRow(){
+		return ($this->sheetData->valid() && intval($this->sheetData->current()['r'])==($this->key+1));
 	}
 
 	public function current(){
 		if(isset($this->cache[$this->key])){
 			return $this->cache[$this->key];
 		}
-		elseif($this->currentRow()){
-			$this->sharedStrings->prepare();
-			$this->stylesNum->prepare();
+		elseif($this->isCurrentRow()){
 			$this->cache=[];
 			$this->parseData();
 			return $this->cache[$this->key]??[];
@@ -156,10 +166,10 @@ class SheetIterator implements \Iterator{
 		do{
 			++$this->key;
 			if(isset($this->cache[$this->key])) return;
-			while($this->sheetData->valid() && ($this->key+1)>intval($this->sheetData->current()->attr('r'))){
+			while($this->sheetData->valid() && ($this->key+1)>intval($this->sheetData->current()['r'])){
 				$this->sheetData->next();
 			}
-		}while($this->excludeHidden && ($row=$this->currentRow()) && $row->attr('hidden') && strtolower($row->attr('hidden'))!=='false');
+		}while($this->excludeHidden && $this->isCurrentRow() && ($row=$this->sheetData->current()) && ($row['hidden']??null) && strtolower($row['hidden'])!=='false');
 	}
 
 	public function key(){
@@ -167,6 +177,9 @@ class SheetIterator implements \Iterator{
 	}
 
 	public function valid(){
+		if(!is_null($this->rowEnd) && $this->key()>$this->rowEnd){
+			return false;
+		}
 		return isset($this->cache[$this->key]) || ($this->sheetData && $this->sheetData->valid());
 	}
 
@@ -177,17 +190,25 @@ class SheetIterator implements \Iterator{
 		if(!$this->sheetData) return;
 		$this->sheetData->rewind();
 		$this->key=$this->sheetData->key();
+		if(!is_null($this->rowBegin)){
+			while($this->key()<$this->rowBegin && $this->valid()){
+				$this->next();
+			}
+		}
 	}
 
+    static $cc=[];
+
 	public static function colToIndex(string $col){
+        if(isset(self::$cc[$col])) return self::$cc[$col];
 		$index=0;
 		foreach(str_split(strrev($col)) As $i=>&$l){
-			$n=base_convert($l, 36, 10)-10;
+			$n=intval(base_convert($l, 36, 10))-10;
 			if($n<0) return null;
-			$index+=($n+1)*pow(26, $i);
+			$index+=($n+1)*(26**$i);
 		}
 		$index-=1;
-		return $index;
+		return self::$cc[$col]=intval($index);
 	}
 
 	public static function indexToCol(int $index){

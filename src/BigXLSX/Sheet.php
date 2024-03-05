@@ -11,6 +11,10 @@ namespace BigXLSX;
  * @property-read string $path Ruta de recurso
  */
 class Sheet implements \IteratorAggregate{
+	// Esquemas de tablas dinámicas encontrado en: "xl/worksheets/_rels/{SHEETNAME.xml}.rels"
+	const SCHEMA_TABLE='http://schemas.openxmlformats.org/officeDocument/2006/relationships/table';
+	const SCHEMA_TABLE_OOXML='http://purl.oclc.org/ooxml/officeDocument/relationships/table';
+
 	/**
 	 * @var Reader
 	 */
@@ -100,15 +104,67 @@ class Sheet implements \IteratorAggregate{
 		return $this->file;
 	}
 
-	public function getReader(){
+	public function &getReader(){
 		return $this->reader;
+	}
+
+	/**
+	 * @return Table[]
+     * @throws \Exception
+     */
+	public function getTables(){
+		$tables=[];
+		if($srels=(new \BigXML\File($this->getReader()->getEntryPath(dirname($this->path).'/_rels/'.basename($this->path).'.rels')))->getReader('Relationships/Relationship')){
+			foreach($srels->getIterator() AS $srel){
+				if(in_array($srel['Type'], [
+					self::SCHEMA_TABLE,
+					self::SCHEMA_TABLE_OOXML
+				])){
+					$pathTable=dirname($this->path).'/'.$srel['Target'];
+					if($rtable=(new \BigXML\File($this->getReader()->getEntryPath($pathTable)))->getReader('table')){
+						$infoTable=$rtable->attr_all();
+						$infoTable['r:id']=$srel['Id'];
+						$infoTable['path']=$pathTable;
+                        if(($tb=Table::init($this, $infoTable))){
+                            $tables[$infoTable['r:id']]=$tb;
+                        }
+					}
+				}
+			}
+		}
+		return $tables;
+	}
+
+    /**
+     * @param $tablerId
+     * @return Table|null
+     * @throws \Exception
+     */
+	public function getTableByrId($tablerId){
+		if($srels=(new \BigXML\File($this->getReader()->getEntryPath(dirname($this->path).'/_rels/'.basename($this->path).'.rels')))->getReader('Relationships/Relationship')){
+			foreach($srels->getIterator() AS $srel){
+				if(in_array($srel['Type'], [
+					self::SCHEMA_TABLE,
+					self::SCHEMA_TABLE_OOXML
+				]) && $tablerId==$srel['Id']){
+					$pathTable=dirname($this->path).'/'.$srel['Target'];
+					if($rtable=(new \BigXML\File($this->getReader()->getEntryPath($pathTable)))->getReader('table')){
+						$infoTable=$rtable->attr_all();
+						$infoTable['r:id']=$srel['Id'];
+						$infoTable['path']=$pathTable;
+						return Table::init($this, $infoTable);
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
 	 * @return SheetIterator
 	 */
 	public function getIterator(){
-		return new SheetIterator($this);
+		return new SheetIterator($this, $this->getAlias());
 	}
 
 }

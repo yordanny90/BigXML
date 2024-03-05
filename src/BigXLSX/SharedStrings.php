@@ -3,39 +3,40 @@
 namespace BigXLSX;
 
 class SharedStrings{
-	/**
-	 * @var \BigXML\File
-	 */
-	private $xml;
 	private $cache=[];
+    /**
+     * @var \Iterator|null
+     */
+    private $iterator;
 
-	public function __construct(){ }
+	private function __construct(){ }
 
-	public function assign(\BigXML\File $xml=null){
-		$this->cache=[];
-		$this->xml=$xml;
-	}
+    public static function empty(){
+        return new static();
+    }
 
-	/**
-	 * Prepara la lista de strings del xml, en caso de que no se hayan cargado aún
-	 * @return bool Devuelve TRUE si el xml existe y se pudo cargar la lista de strings.<br>
-	 * En caso de fallo, devuelve FALSE, pero la lista cargada anteriormente sigue intacta
-	 */
-	public function prepare(){
-		if(!$this->xml) return false;
-		$this->cache=[];
-		$success=false;
-		if($reader=$this->xml->getReader('sst/si')){
-			foreach($reader as $i=>$ss){
-				$this->cache[$i]=self::normalizeString($ss->readString());
-			}
-			$success=true;
-		}
-		$this->xml=null;
-		return $success;
-	}
+    public static function fromXML(\BigXML\File $xml=null, \ArrayAccess $cache=null){
+        $new=new static();
+        $new->cache=$cache??[];
+        $reader=$xml->getReader('sst/si');
+        if($reader){
+            $new->iterator=$reader->getIterator();
+            $new->iterator->rewind();
+        }
+        return $new;
+    }
 
-	public function get(int $index){
+    public function get(int $index){
+        if(!isset($this->cache[$index]) && $this->iterator){
+            while($this->iterator->valid()){
+                $k=$this->iterator->key();
+                $curr=$this->iterator->current();
+                $this->cache[$k]=self::normalizeString($curr->readString());
+                $this->iterator->next();
+                if(isset($this->cache[$index])) break;
+            }
+            if(!$this->iterator->valid()) $this->iterator=null;
+        }
 		return $this->cache[$index]??null;
 	}
 

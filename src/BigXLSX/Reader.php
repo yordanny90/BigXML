@@ -38,7 +38,7 @@ class Reader{
 	 */
 	public function __construct($file){
 		$filepath=realpath($file);
-		if(!$filepath) throw new Exception("File $file not found");
+		if(!$filepath) throw new Exception("File not found: ".$filepath);
 		$this->file=$filepath;
 		$this->parse();
 	}
@@ -56,7 +56,7 @@ class Reader{
 	protected function getEntryData($name){
 		$data=file_get_contents($this->getEntryPath($name));
 		if($data===false){
-			throw new Exception("File $name does not exist in the Excel file");
+			throw new Exception("Entry does not exist in the Excel file: ".$name);
 		}
 		else{
 			return $data;
@@ -64,6 +64,7 @@ class Reader{
 	}
 
 	public function getEntryPath($name){
+		$name=preg_replace('/(\/|^)[^\/]+\/\.\.\//', '$1', $name);
 		$path='zip://'.$this->file.'#'.$name;
 		return $path;
 	}
@@ -74,24 +75,24 @@ class Reader{
 	protected function parse(){
 		$sheets=[];
 		$rels_reader=(new \BigXML\File($this->getEntryPath("_rels/.rels")))->getReader('Relationships/Relationship');
-		if(!$rels_reader) throw new Exception('Invalid XLSX file: rels not found');
+		if(!$rels_reader) throw new Exception('XLSX rels not found');
 		foreach($rels_reader->getIterator() as $node){
-			if(in_array($node->attr('Type'), [self::SCHEMA_OFFICEDOCUMENT, self::SCHEMA_OFFICEDOCUMENT_OOXML])){
-				$workbook=$node->attr('Target');
+			if(in_array($node['Type'], [self::SCHEMA_OFFICEDOCUMENT, self::SCHEMA_OFFICEDOCUMENT_OOXML])){
+				$workbook=$node['Target'];
 				$work_dir=dirname($workbook);
 				$workfile=new \BigXML\File($this->getEntryPath($workbook));
 				$work_sheets=$workfile->getReader('workbook/sheets/sheet');
 				if($workbookPr=$workfile->getReader('workbook/workbookPr')){
-					if(in_array($workbookPr->attr('date1904'), [
+					if(in_array($workbookPr['date1904'], [
 						'1',
 						'true'
 					])){
 						$this->calendar=1094;
 					}
 				}
-				if(!$work_sheets) throw new Exception('Invalid XLSX file: workbook sheets not found');
+				if(!$work_sheets) throw new Exception('XLSX workbook sheets not found');
 				$work_rels=(new \BigXML\File($this->getEntryPath($work_dir.'/_rels/'.basename($workbook).'.rels')))->getReader('Relationships/Relationship');
-				if(!$work_rels) throw new Exception('Invalid XLSX file: workbook rels not found');
+				if(!$work_rels) throw new Exception('XLSX workbook rels not found');
 				foreach($work_sheets->getIterator() as $sheet){
 					$info=$sheet->attr_all();
 					$sheets[$info['r:id']]=$info;
@@ -117,16 +118,18 @@ class Reader{
 		$this->sheets=[];
 		foreach($sheets as $info){
 			if(!isset($info['path'])) continue;
-			$this->sheets[$info['sheetId']]=new Sheet($this, $info);
+			$this->sheets[$info['r:id']]=new Sheet($this, $info);
 		}
 	}
 
 	public function &getSharedStrings(){
 		if(isset($this->cache['SharedStrings'])) return $this->cache['SharedStrings'];
-		$cache=new SharedStrings();
 		if($this->sharedStrings){
-			$cache->assign($this->sharedStrings);
+			$cache=SharedStrings::fromXML($this->sharedStrings);
 		}
+        else{
+            $cache=SharedStrings::empty();
+        }
 		if($this->save_cache['SharedStrings']??false) $this->cache['SharedStrings']=&$cache;
 		return $cache;
 	}
@@ -146,11 +149,13 @@ class Reader{
 
 	public function &getStylesNumeric(){
 		if(isset($this->cache['StylesNumeric'])) return $this->cache['StylesNumeric'];
-		$cache=new StylesNumeric();
-		$cache->setCalendar($this->calendar);
 		if($this->styles){
-			$cache->assign($this->styles);
+			$cache=StylesNumeric::fromXML($this->styles);
 		}
+        else{
+            $cache=StylesNumeric::empty();
+        }
+        $cache->setCalendar($this->calendar);
 		if($this->save_cache['StylesNumeric']??false) $this->cache['StylesNumeric']=&$cache;
 		return $cache;
 	}
@@ -172,7 +177,19 @@ class Reader{
 		$res=[];
 		foreach($this->sheets as &$sheet){
 			if(!$alsoHidden && $sheet->isHidden()) continue;
-			$res[$sheet->sheetId]=$sheet->name;
+			$res[$sheet->rId]=$sheet->name;
+		}
+		return $res;
+	}
+
+	public function getTableNames($alsoHidden=false){
+		$res=[];
+		foreach($this->sheets as &$sheet){
+			if(!$alsoHidden && $sheet->isHidden()) continue;
+			$tables=$sheet->getTables();
+			foreach($tables AS $tb){
+				$res[$sheet->rId.':'.$tb->rId]=$sheet->name.' ['.$tb->name.']';
+			}
 		}
 		return $res;
 	}
@@ -182,12 +199,42 @@ class Reader{
 		foreach($this->sheets as &$sheet){
 			if(!$alsoHidden && $sheet->isHidden()) continue;
 			$res[]=[
+                'type'=> 'sheet',
 				'id'=>$sheet->rId,
 				'name'=>$sheet->name,
 				'hidden'=>$sheet->isHidden()
 			];
 		}
 		return $res;
+	}
+
+	public function getTablerIdNames($alsoHidden=false){
+		$res=[];
+		foreach($this->sheets as &$sheet){
+			if(!$alsoHidden && $sheet->isHidden()) continue;
+			$tables=$sheet->getTables();
+			foreach($tables AS $tb){
+				$res[]=[
+                    'type'=> 'table',
+					'id'=>$sheet->rId.':'.$tb->rId,
+					'name'=>$tb->name,
+					'hidden'=>$sheet->isHidden()
+				];
+			}
+		}
+		return $res;
+	}
+
+	/**
+	 * @param $tablerId
+	 * @return Table|null
+	 */
+	public function getTableByrId($tablerId){
+		list($sheetId, $tbrId)=explode(':', $tablerId, 2);
+		if($sheet=$this->getSheetByrId($sheetId)){
+			return $sheet->getTableByrId($tbrId);
+		}
+		return null;
 	}
 
 	public function getSheetCount($alsoHidden=false){
@@ -205,16 +252,8 @@ class Reader{
 	 * @param $sheetId
 	 * @return Sheet|null
 	 */
-	public function getSheetById($sheetId){
-		return $this->sheets[$sheetId]??null;
-	}
-
-	/**
-	 * @param $sheetId
-	 * @return Sheet|null
-	 */
 	public function getSheetByrId($sheetrId){
-		foreach($this->sheets AS &$s){
+		if($s=$this->sheets[$sheetrId]??null){
 			if($s->rId===$sheetrId) return $s;
 		}
 		return null;

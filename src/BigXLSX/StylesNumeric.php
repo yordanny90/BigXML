@@ -12,11 +12,39 @@ class StylesNumeric{
 	 */
 	private $xml;
 	private $cache=[];
+    /**
+     * @var \Iterator|null
+     */
+    private $numFmt;
+    /**
+     * @var \Iterator|null
+     */
+    private $xf;
 	private $calendar=1900;
 
-	public function __construct(){ }
+	private function __construct(){ }
 
-	/**
+    public static function empty(){
+        return new static();
+    }
+
+    public static function fromXML(\BigXML\File $xml=null, \ArrayAccess $cache=null){
+        $new=new static();
+        $new->cache=$cache??[];
+        $reader=$xml->getReader('styleSheet/numFmts/numFmt');
+        if($reader){
+            $new->numFmt=$reader->getIterator();
+            $new->numFmt->rewind();
+        }
+        $reader=$xml->getReader('styleSheet/cellXfs/xf');
+        if($reader){
+            $new->xf=$reader->getIterator();
+            $new->xf->rewind();
+        }
+        return $new;
+    }
+
+    /**
 	 * @param int $calendar Posibles valores: 1900, 1904
 	 */
 	public function setCalendar(int $calendar=1900){
@@ -24,16 +52,11 @@ class StylesNumeric{
 		$this->calendar=1900;
 	}
 
-	/**
+    /**
 	 * @return int
 	 */
 	public function getCalendar(){
 		return $this->calendar;
-	}
-
-	public function assign(\BigXML\File $xml=null){
-		$this->cache=[];
-		$this->xml=$xml;
 	}
 
 	/**
@@ -48,14 +71,14 @@ class StylesNumeric{
 		if($reader=$this->xml->getReader('styleSheet/numFmts/numFmt')){
 			$numFmt=[];
 			foreach($reader as $nf){
-				$numFmt[$nf->attr('numFmtId')]=[
-					'nfId'=>$nf->attr('numFmtId'),
-					'nfCode'=>$nf->attr('formatCode'),
+				$numFmt[$nf['numFmtId']]=[
+					'nfId'=>$nf['numFmtId'],
+					'nfCode'=>$nf['formatCode'],
 				];
 			}
 			if($reader=$this->xml->getReader('styleSheet/cellXfs/xf')){
 				foreach($reader as $i=>$xf){
-					if($xf->attr('applyNumberFormat') && !is_null($nfId=$xf->attr('numFmtId'))){
+					if($xf['applyNumberFormat'] && !is_null($nfId=$xf['numFmtId'])){
 						if(!isset($numFmt[$nfId])){
 							if(isset($this->cache[$nfId])){
 								$this->cache[$i]=&$this->cache[$nfId];
@@ -81,11 +104,41 @@ class StylesNumeric{
 	}
 
 	public function get(int $index){
-		return $this->cache[$index] ?? null;
+        if(!isset($this->cache[$index]) && $this->xf){
+            while($this->xf->valid()){
+                $xf=$this->xf->current();
+                if($xf['applyNumberFormat'] && !is_null($xf_numFmtId=$xf['numFmtId'])){
+                    $i=$this->xf->key();
+                    $this->cache[$i]=array_merge($this->cache[$i]??[], ['numFmt'=>$xf_numFmtId]);
+                    if(!isset($this->cache[$xf_numFmtId]) && $this->numFmt){
+                        while($this->numFmt->valid()){
+                            $nf=$this->numFmt->current();
+                            $numFmtId=$nf['numFmtId'];
+                            $this->cache[$numFmtId]=[];
+                            if(is_string($nf['formatCode'] ?? null) && preg_match('/^(\[\$\-\w+\])?([ymdHis][ymdHis\\/\-\\\,: ]+)(AM\/PM|;@)?$/i', $nf['formatCode'])){
+                                $this->cache[$numFmtId]['date']=true;
+                            }
+                            $this->numFmt->next();
+                            if($xf_numFmtId==$numFmtId) break;
+                        }
+                        if(!$this->numFmt->valid()) $this->numFmt=null;
+                    }
+                }
+                $this->xf->next();
+                if(isset($this->cache[$index])) break;
+            }
+            if(!$this->xf->valid()) $this->xf=null;
+        }
+        if(isset($this->cache[$index])){
+            if(isset($this->cache[$index]['numFmt']) && isset($this->cache[$this->cache[$index]['numFmt']])){
+                return array_merge($this->cache[$index], $this->cache[$this->cache[$index]['numFmt']]);
+            }
+        }
+        return null;
 	}
 
 	public function isDate(int $index){
-		return (bool)($this->cache[$index]['date'] ?? false);
+		return boolval($this->get($index)['date'] ?? false);
 	}
 
 	public function parseDate(string $dtValue){
