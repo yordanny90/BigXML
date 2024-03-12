@@ -7,10 +7,6 @@ class StylesNumeric{
 		1900=>'1899-12-30', // Equivalente a 1900-00-30
 		1904=>'1904-01-01',
 	];
-	/**
-	 * @var \BigXML\File
-	 */
-	private $xml;
 	private $cache=[];
     /**
      * @var \Iterator|null
@@ -28,9 +24,14 @@ class StylesNumeric{
         return new static();
     }
 
-    public static function fromXML(\BigXML\File $xml=null, \ArrayAccess $cache=null){
+    public static function fromXML(\BigXML\File $xml=null, $sqlite=false){
         $new=new static();
-        $new->cache=$cache??[];
+        if($sqlite && SQLiteArray::isUsable()){
+            $new->cache=$sqlite?new SQLiteArray():[];
+        }
+        else{
+            $new->cache=[];
+        }
         $reader=$xml->getReader('styleSheet/numFmts/numFmt');
         if($reader){
             $new->numFmt=$reader->getIterator();
@@ -59,50 +60,6 @@ class StylesNumeric{
 		return $this->calendar;
 	}
 
-	/**
-	 * Prepara la lista de strings del xml, en caso de que no se hayan cargado aún
-	 * @return bool Devuelve TRUE si el xml existe y se pudo cargar la lista de strings.<br>
-	 * En caso de fallo, devuelve FALSE, pero la lista cargada anteriormente sigue intacta
-	 */
-	public function prepare(){
-		if(!$this->xml) return false;
-		$this->cache=[];
-		$success=false;
-		if($reader=$this->xml->getReader('styleSheet/numFmts/numFmt')){
-			$numFmt=[];
-			foreach($reader as $nf){
-				$numFmt[$nf['numFmtId']]=[
-					'nfId'=>$nf['numFmtId'],
-					'nfCode'=>$nf['formatCode'],
-				];
-			}
-			if($reader=$this->xml->getReader('styleSheet/cellXfs/xf')){
-				foreach($reader as $i=>$xf){
-					if($xf['applyNumberFormat'] && !is_null($nfId=$xf['numFmtId'])){
-						if(!isset($numFmt[$nfId])){
-							if(isset($this->cache[$nfId])){
-								$this->cache[$i]=&$this->cache[$nfId];
-							}
-							else{
-								$this->cache[$i]=[
-									'nfId'=>$nfId,
-								];
-							}
-							continue;
-						}
-						if(preg_match('/^(\[\$\-\w+\])?([ymdHis][ymdHis\\/\-\\\,: ]+)(AM\/PM|;@)?$/i', $numFmt[$nfId]['nfCode'])){
-							$numFmt[$nfId]['date']=true;
-						}
-						$this->cache[$i]=&$numFmt[$nfId];
-					}
-				}
-				$success=true;
-			}
-		}
-		$this->xml=null;
-		return $success;
-	}
-
 	public function get(int $index){
         if(!isset($this->cache[$index]) && $this->xf){
             while($this->xf->valid()){
@@ -116,7 +73,7 @@ class StylesNumeric{
                             $numFmtId=$nf['numFmtId'];
                             $this->cache[$numFmtId]=[];
                             if(is_string($nf['formatCode'] ?? null) && preg_match('/^(\[\$\-\w+\])?([ymdHis][ymdHis\\/\-\\\,: ]+)(AM\/PM|;@)?$/i', $nf['formatCode'])){
-                                $this->cache[$numFmtId]['date']=true;
+                                $this->cache[$numFmtId]=array_merge($this->cache[$numFmtId]??[], ['date'=>true]);
                             }
                             $this->numFmt->next();
                             if($xf_numFmtId==$numFmtId) break;

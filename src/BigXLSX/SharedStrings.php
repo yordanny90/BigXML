@@ -9,15 +9,21 @@ class SharedStrings{
      */
     private $iterator;
 
-	private function __construct(){ }
+	private function __construct(){
+    }
 
     public static function empty(){
         return new static();
     }
 
-    public static function fromXML(\BigXML\File $xml=null, \ArrayAccess $cache=null){
+    public static function fromXML(\BigXML\File $xml=null, $useSQLite=false){
         $new=new static();
-        $new->cache=$cache??[];
+        if($useSQLite && SQLiteArray::isUsable()){
+            $new->cache=$useSQLite?new SQLiteArray():[];
+        }
+        else{
+            $new->cache=[];
+        }
         $reader=$xml->getReader('sst/si');
         if($reader){
             $new->iterator=$reader->getIterator();

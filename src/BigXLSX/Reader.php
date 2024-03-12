@@ -5,6 +5,9 @@ namespace BigXLSX;
 use Exception;
 
 class Reader{
+    protected static $useSQLite=false;
+    protected static $saveCacheStylesNumeric=false;
+    protected static $saveCacheSharedStrings=false;
 
 	/**
 	 * @var \BigXML\File|null
@@ -14,8 +17,8 @@ class Reader{
 	 * @var \BigXML\File|null
 	 */
 	protected $styles;
-	protected $cache=[];
-	protected $save_cache=[];
+    protected $cache_SS;
+    protected $cache_SN;
 	protected $calendar=1900;
 	/**
 	 * @var Sheet[] Hojas del archivo
@@ -123,57 +126,58 @@ class Reader{
 	}
 
 	public function &getSharedStrings(){
-		if(isset($this->cache['SharedStrings'])) return $this->cache['SharedStrings'];
+		if($this->cache_SS) return $this->cache_SS;
 		if($this->sharedStrings){
-			$cache=SharedStrings::fromXML($this->sharedStrings);
+			$cache=SharedStrings::fromXML($this->sharedStrings, self::isUseSQLite());
 		}
         else{
             $cache=SharedStrings::empty();
         }
-		if($this->save_cache['SharedStrings']??false) $this->cache['SharedStrings']=&$cache;
+		if(self::isSaveCacheSharedStrings()) $this->cache_SS=&$cache;
 		return $cache;
 	}
 
-	public function disableCacheSS(){
-		$this->save_cache['SharedStrings']=false;
-		unset($this->cache['SharedStrings']);
+	public static function saveCacheSharedStrings($enable=true){
+        self::$saveCacheSharedStrings=boolval($enable);
 	}
 
-	public function enableCacheSS(){
-		$this->save_cache['SharedStrings']=true;
-	}
-
-	public function isSaveCacheSS(){
-		return $this->save_cache['SharedStrings']??false;
+	public static function isSaveCacheSharedStrings(){
+		return self::$saveCacheSharedStrings;
 	}
 
 	public function &getStylesNumeric(){
-		if(isset($this->cache['StylesNumeric'])) return $this->cache['StylesNumeric'];
+		if($this->cache_SN) return $this->cache_SN;
 		if($this->styles){
-			$cache=StylesNumeric::fromXML($this->styles);
+			$cache=StylesNumeric::fromXML($this->styles, self::isUseSQLite());
 		}
         else{
             $cache=StylesNumeric::empty();
         }
         $cache->setCalendar($this->calendar);
-		if($this->save_cache['StylesNumeric']??false) $this->cache['StylesNumeric']=&$cache;
+		if(self::isSaveCacheStylesNumeric()) $this->cache_SN=&$cache;
 		return $cache;
 	}
 
-	public function disableCacheStylesNumeric(){
-		$this->save_cache['StylesNumeric']=false;
-		unset($this->cache['StylesNumeric']);
+	public static function saveCacheStylesNumeric($enable=true){
+        self::$saveCacheStylesNumeric=boolval($enable);
 	}
 
-	public function enableCacheStylesNumeric(){
-		$this->save_cache['StylesNumeric']=true;
+	public static function isSaveCacheStylesNumeric(){
+		return self::$saveCacheStylesNumeric;
 	}
 
-	public function isSaveCacheStylesNumeric(){
-		return $this->save_cache['StylesNumeric']??false;
-	}
+    public static function useSQLite($use=true){
+        self::$useSQLite=boolval($use);
+    }
 
-	public function getSheetNames($alsoHidden=false){
+    /**
+     * @return bool
+     */
+    public static function isUseSQLite(){
+        return self::$useSQLite;
+    }
+
+    public function getSheetNames($alsoHidden=false){
 		$res=[];
 		foreach($this->sheets as &$sheet){
 			if(!$alsoHidden && $sheet->isHidden()) continue;
