@@ -1,6 +1,7 @@
 {
     "name": "yordanny90/bigxml",
     "description": "Libreria para leer archivos XML grandes sin cargarlos completamente en memoria.",
+    "version": "1.0.0",
     "type": "library",
     "license": "MIT",
     "authors": [
