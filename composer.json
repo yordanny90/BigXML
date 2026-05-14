@@ -1,0 +1,37 @@
+{
+    "name": "yordanny90/bigxml",
+    "description": "Libreria para leer archivos XML grandes sin cargarlos completamente en memoria.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Yordanny Mejias"
+        }
+    ],
+    "keywords": [
+        "xml",
+        "xmlreader",
+        "large-xml",
+        "bigxml",
+        "streaming"
+    ],
+    "homepage": "https://github.com/yordanny90/BigXML",
+    "support": {
+        "issues": "https://github.com/yordanny90/BigXML/issues",
+        "source": "https://github.com/yordanny90/BigXML"
+    },
+    "require": {
+        "php": ">=7.1",
+        "ext-libxml": "*",
+        "ext-xmlreader": "*"
+    },
+    "suggest": {
+        "ext-dom": "Permite convertir nodos a DOMNode con BigXML\\Node::toDOM().",
+        "ext-simplexml": "Permite convertir nodos a SimpleXMLElement con BigXML\\Node::toSimpleXMLElement()."
+    },
+    "autoload": {
+        "psr-4": {
+            "BigXML\\": "src/BigXML/"
+        }
+    }
+}

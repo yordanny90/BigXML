@@ -13,6 +13,14 @@ PHP 7.1+, PHP 8.0+
 
 Extensión [libxml](https://www.php.net/manual/en/book.libxml.php)
 
+Extensión [XMLReader](https://www.php.net/manual/en/book.xmlreader.php)
+
+## Instalación
+
+```bash
+composer require yordanny90/bigxml
+```
+
 ## Ejemplo
 
 La clase principal es `\BigXML\File` como se muestra en el ejemplo:
